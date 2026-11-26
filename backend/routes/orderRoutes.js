@@ -1,6 +1,7 @@
 
 const express = require("express");
 const mongoose = require("mongoose");
+
 const Order = require("../models/Order");
 const Cart = require("../models/Cart");
 const Product = require("../models/Product");
@@ -16,10 +17,11 @@ router.post("/checkout", authMiddleware, async (req, res) => {
     let createdOrder;
 
     await session.withTransaction(async () => {
-      const cart = await Cart.findOne({ user: req.user.id })
-        .session(session);
+      const cart = await Cart.findOne({
+        user: req.user.id,
+      }).session(session);
 
-      if (!cart || cart.items.length === 0) {
+      if (!cart || !cart.items || cart.items.length === 0) {
         throw new Error("Cart is empty");
       }
 
@@ -27,17 +29,28 @@ router.post("/checkout", authMiddleware, async (req, res) => {
       const orderItems = [];
 
       for (const item of cart.items) {
+        if (!item.product || item.quantity < 1) {
+          throw new Error("Invalid cart item");
+        }
+
         const product = await Product.findOneAndUpdate(
           {
             _id: item.product,
             stock: { $gte: item.quantity },
           },
-          { $inc: { stock: -item.quantity } },
-          { new: true, session }
+          {
+            $inc: { stock: -item.quantity },
+          },
+          {
+            new: true,
+            session,
+          }
         );
 
         if (!product) {
-          throw new Error("Product unavailable or insufficient stock");
+          throw new Error(
+            "Product unavailable or insufficient stock"
+          );
         }
 
         totalAmount += product.price * item.quantity;
@@ -50,11 +63,13 @@ router.post("/checkout", authMiddleware, async (req, res) => {
       }
 
       const [order] = await Order.create(
-        [{
-          user: req.user.id,
-          items: orderItems,
-          totalAmount,
-        }],
+        [
+          {
+            user: req.user.id,
+            items: orderItems,
+            totalAmount,
+          },
+        ],
         { session }
       );
 
@@ -64,12 +79,14 @@ router.post("/checkout", authMiddleware, async (req, res) => {
       await cart.save({ session });
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Order placed successfully",
       order: createdOrder,
     });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({
+      message: error.message,
+    });
   } finally {
     await session.endSession();
   }
@@ -78,12 +95,15 @@ router.post("/checkout", authMiddleware, async (req, res) => {
 // Get my orders
 router.get("/my-orders", authMiddleware, async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.user.id })
-      .populate("items.product");
+    const orders = await Order.find({
+      user: req.user.id,
+    }).populate("items.product");
 
-    res.json(orders);
+    return res.status(200).json(orders);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({
+      message: error.message,
+    });
   }
 });
 

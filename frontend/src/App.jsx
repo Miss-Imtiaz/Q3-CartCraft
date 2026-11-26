@@ -14,6 +14,7 @@ function App() {
   const [cart, setCart] = useState(null);
   const [cartMessage, setCartMessage] = useState("");
   const [isRegister, setIsRegister] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   useEffect(() => {
     fetch(`${API}/products`)
@@ -33,8 +34,13 @@ function App() {
       const res = await fetch(`${API}/cart`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Could not load cart");
+
+      if (!res.ok) {
+        throw new Error(data.message || "Could not load cart");
+      }
+
       setCart(data);
     } catch (error) {
       setCartMessage(error.message);
@@ -99,12 +105,50 @@ function App() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Could not add product");
+
+      if (!res.ok) {
+        throw new Error(data.message || "Could not add product");
+      }
 
       setCartMessage("Product added to cart!");
       await loadCart(token);
     } catch (error) {
       setCartMessage(error.message);
+    }
+  };
+
+  const checkout = async () => {
+    if (!cartItems.length) return;
+
+    setIsCheckingOut(true);
+    setCartMessage("");
+
+    try {
+      const res = await fetch(`${API}/orders/checkout`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Checkout failed");
+      }
+
+      setCart({ items: [] });
+      setCartMessage("Order placed successfully! Thank you for shopping with CartCraft.");
+
+      const productsRes = await fetch(`${API}/products`);
+      if (productsRes.ok) {
+        const updatedProducts = await productsRes.json();
+        setProducts(updatedProducts);
+      }
+    } catch (error) {
+      setCartMessage(error.message);
+    } finally {
+      setIsCheckingOut(false);
     }
   };
 
@@ -122,6 +166,7 @@ function App() {
       <p>Your Smart Shopping Experience</p>
 
       <h2>Our Products</h2>
+
       {message && <p>{message}</p>}
 
       <div className="products">
@@ -131,11 +176,16 @@ function App() {
             <p>{product.description}</p>
             <strong>Rs. {product.price}</strong>
             <p>Stock: {product.stock}</p>
+
             <button
               onClick={() => addToCart(product._id)}
               disabled={!token || product.stock < 1}
             >
-              {!token ? "Login to Add" : "Add to Cart"}
+              {!token
+                ? "Login to Add"
+                : product.stock < 1
+                ? "Out of Stock"
+                : "Add to Cart"}
             </button>
           </div>
         ))}
@@ -145,53 +195,59 @@ function App() {
 
       <h2>{isRegister ? "Create Your Account" : "Login"}</h2>
 
-      <form onSubmit={handleAuth}>
-        {isRegister && (
-          <input
-            type="text"
-            placeholder="Full Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-        )}
+      {!token ? (
+        <>
+          <form onSubmit={handleAuth}>
+            {isRegister && (
+              <input
+                type="text"
+                placeholder="Full Name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            )}
 
-        <input
-          type="email"
-          placeholder="Your Personal Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
+            <input
+              type="email"
+              placeholder="Your Personal Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
 
-        <input
-          type="password"
-          placeholder="Create Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          minLength={6}
-          required
-        />
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              minLength={6}
+              required
+            />
 
-        <button type="submit">
-          {isRegister ? "Register" : "Login"}
-        </button>
-      </form>
+            <button type="submit">
+              {isRegister ? "Register" : "Login"}
+            </button>
+          </form>
 
-      <p>
-        {isRegister
-          ? "Already have an account?"
-          : "Don't have an account?"}{" "}
-        <button
-          type="button"
-          onClick={() => {
-            setIsRegister(!isRegister);
-            setCartMessage("");
-          }}
-        >
-          {isRegister ? "Login" : "Create Account"}
-        </button>
-      </p>
+          <p>
+            {isRegister
+              ? "Already have an account?"
+              : "Don't have an account?"}{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setIsRegister(!isRegister);
+                setCartMessage("");
+              }}
+            >
+              {isRegister ? "Login" : "Create Account"}
+            </button>
+          </p>
+        </>
+      ) : (
+        <p>Logged in as {email}</p>
+      )}
 
       {cartMessage && <p>{cartMessage}</p>}
 
@@ -211,7 +267,12 @@ function App() {
               </p>
             </div>
           ))}
+
           <h3>Total: Rs. {total}</h3>
+
+          <button onClick={checkout} disabled={isCheckingOut}>
+            {isCheckingOut ? "Processing..." : "Proceed to Checkout"}
+          </button>
         </>
       )}
     </div>
